@@ -70,5 +70,22 @@ router.delete("/videos/:id", adminAuth, (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// GET app settings
+router.get("/settings", adminAuth, (req, res) => {
+  try {
+    res.json(db.getAppSettings());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
+// UPDATE app settings
+router.put("/settings", adminAuth, (req, res) => {
+  try {
+    const updated = db.updateAppSettings(req.body);
+    res.json({ message: "Settings updated", settings: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 module.exports = router;

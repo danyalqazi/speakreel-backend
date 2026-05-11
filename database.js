@@ -11,6 +11,14 @@ db.defaults({
   used_topics: [],
   reset_tokens: [],
   generation_logs: [],
+    app_settings: {
+    mode: "free",           // "free" or "freemium"
+    pro_price: 9,
+    free_video_limit: 3,
+    pro_video_limit: 999,
+    voice_changer_free: true,  // Admin can toggle
+    voice_changer_pro_only: false,
+  },
   _counters: { users: 0, videos: 0 },
 }).write();
 
@@ -22,6 +30,21 @@ const nextId = (table) => {
 };
 
 const dbHelper = {
+  // APP SETTINGS
+  getAppSettings: () => {
+    return db.get("app_settings").value();
+  },
+
+  updateAppSettings: (settings) => {
+    db.get("app_settings").assign(settings).write();
+    return db.get("app_settings").value();
+  },
+
+  isProFeature: (feature) => {
+    const settings = db.get("app_settings").value();
+    if (settings.mode === "free") return false; // Everything free
+    return settings[`${feature}_pro_only`] || false;
+  },
   // USERS
   createUser: (name, email, password) => {
     const id = nextId("users");
