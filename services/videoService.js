@@ -34,21 +34,6 @@ const getMusicForNiche = (niche) => {
   return nicheMusic[niche] || "cinematic";
 };
 
-// Ken Burns presets — lightweight versions
-const getKenBurns = (index, duration, width, height) => {
-  const frames = Math.ceil(duration * 24); // 24fps
-  const effects = [
-    // Slow zoom in
-    `zoompan=z='min(zoom+0.001,1.3)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=24`,
-    // Slow zoom out
-    `zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.001))':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=24`,
-    // Pan left to right
-    `zoompan=z='1.2':d=${frames}:x='if(lte(on,1),0,x+1.5)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=24`,
-    // Pan right to left
-    `zoompan=z='1.2':d=${frames}:x='if(lte(on,1),iw,x-1.5)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=24`,
-  ];
-  return effects[index % effects.length];
-};
 
 const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "History") => {
   const tempDir = path.join(__dirname, "../temp");
@@ -94,12 +79,10 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
 
       console.log(`🎬 Slide ${i + 1}/${slides.length} (${duration.toFixed(1)}s)`);
 
-      const kenBurns = getKenBurns(i, duration, WIDTH, HEIGHT);
-
-      // Text overlay filter
+      // Simple scale filter (works on all FFmpeg builds)
       const textFilter = safeTitle
-        ? `,drawtext=text='${safeTitle}':fontsize=30:fontcolor=white:x=(w-text_w)/2:y=h-65:box=1:boxcolor=black@0.65:boxborderw=8`
-        : "";
+        ? `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,drawtext=text='${safeTitle}':fontsize=30:fontcolor=white:x=(w-text_w)/2:y=h-65:box=1:boxcolor=black@0.65:boxborderw=8`
+        : `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
 
       await new Promise((resolve, reject) => {
         ffmpeg()
@@ -107,7 +90,7 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
           .input(imagePath)
           .inputOptions(["-loop 1"])
           .outputOptions([
-            `-vf`, `scale=8000:-1,${kenBurns}${textFilter},setsar=1`,
+            `-vf`, textFilter,
             `-c:v libx264`,
             `-preset ultrafast`,
             `-crf 30`,
