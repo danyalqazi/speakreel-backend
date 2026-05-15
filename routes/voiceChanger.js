@@ -52,11 +52,7 @@ router.post("/change", auth, upload.single("video"), async (req, res) => {
       return res.status(400).json({ error: "Please select male or female voice" });
     }
 
-    // Check ElevenLabs key
-    if (!process.env.ELEVENLABS_API_KEY) {
-      return res.status(400).json({ error: "Voice changer service not configured" });
-    }
-
+   
     const jobId = crypto.randomBytes(8).toString("hex");
     activeJobs[jobId] = { status: "processing", message: "🚀 Starting...", progress: 0 };
 
