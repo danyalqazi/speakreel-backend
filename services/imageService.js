@@ -24,6 +24,8 @@ const fetchImage = async (searchQuery, slideIndex, jobId) => {
     const photo = photos[Math.floor(Math.random() * Math.min(5, photos.length))];
     const imageUrl = photo.src.large2x || photo.src.large;
 
+    const tempDir = path.join(__dirname, "../temp");
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
     // Download image
     const imagePath = path.join(__dirname, "../temp", `${jobId}_slide_${slideIndex}.jpg`);
     const imageResponse = await axios.get(imageUrl, { responseType: "arraybuffer" });
