@@ -34,31 +34,26 @@ const getMusicForNiche = (niche) => {
   return nicheMusic[niche] || "cinematic";
 };
 
-
 const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "History") => {
   const tempDir = path.join(__dirname, "../temp");
   const musicDir = path.join(__dirname, "../music");
   const outputPath = path.join(__dirname, "../videos", `${jobId}_final.mp4`);
 
-  // Video dimensions
-  const WIDTH = 1280;
-  const HEIGHT = 720;
-
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-  if (!fs.existsSync(path.join(__dirname, "../videos"))) {
-    fs.mkdirSync(path.join(__dirname, "../videos"), { recursive: true });
-  }
+  // Ensure directories exist
+  [tempDir, path.join(__dirname, "../videos"), musicDir].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  });
 
   try {
     // Step 1 — Get audio durations
-    onProgress("🎬 Analyzing audio files...", 71);
+    onProgress("🎬 Analyzing audio...", 71);
     const audioDurations = await Promise.all(
       slides.map((s) => getAudioDuration(s.audioPath))
     );
     const totalDuration = audioDurations.reduce((a, b) => a + b, 0);
-    console.log(`📊 Total: ${totalDuration.toFixed(1)}s | Slides: ${audioDurations.map(d => d.toFixed(1) + "s").join(", ")}`);
+    console.log(`📊 Total: ${totalDuration.toFixed(1)}s`);
 
-    // Step 2 — Build each slide with Ken Burns + text overlay
+    // Step 2 — Build each slide video (ultra simple, no filters)
     onProgress("🎬 Building slides...", 73);
     const slideVideos = [];
 
@@ -68,21 +63,7 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
       const audioPath = slides[i].audioPath;
       const duration = audioDurations[i];
 
-      // Safe title for text overlay
-      // Only keep English characters for FFmpeg text overlay
-      // Non-English titles (Urdu, Arabic, etc.) are skipped to avoid FFmpeg errors
-      const rawTitle = slides[i].title || "";
-      const isEnglishOnly = /^[a-zA-Z0-9 .,!?'-]+$/.test(rawTitle);
-      const safeTitle = isEnglishOnly
-        ? rawTitle.substring(0, 45).trim()
-        : ""; // Skip text overlay for non-English languages
-
       console.log(`🎬 Slide ${i + 1}/${slides.length} (${duration.toFixed(1)}s)`);
-
-      // Simple scale filter (works on all FFmpeg builds)
-      const textFilter = safeTitle
-        ? `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,drawtext=text='${safeTitle}':fontsize=30:fontcolor=white:x=(w-text_w)/2:y=h-65:box=1:boxcolor=black@0.65:boxborderw=8`
-        : `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
 
       await new Promise((resolve, reject) => {
         ffmpeg()
@@ -90,45 +71,24 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
           .input(imagePath)
           .inputOptions(["-loop 1"])
           .outputOptions([
-            `-vf`, textFilter,
-            `-c:v libx264`,
-            `-preset ultrafast`,
-            `-crf 30`,
-            `-c:a aac`,
-            `-b:a 96k`,
-            `-pix_fmt yuv420p`,
-            `-movflags +faststart`,
-            `-shortest`,
-            `-y`,
+            "-c:v libx264",
+            "-preset ultrafast",
+            "-crf 30",
+            "-c:a aac",
+            "-b:a 96k",
+            "-pix_fmt yuv420p",
+            "-vf scale=1280:720",
+            "-shortest",
+            "-y",
           ])
           .output(slideVideoPath)
           .on("end", () => {
-            const size = (fs.statSync(slideVideoPath).size / 1024 / 1024).toFixed(1);
-            console.log(`✅ Slide ${i + 1} done (${size}MB)`);
+            console.log(`✅ Slide ${i + 1} done`);
             resolve();
           })
-          .on("error", (err, stdout, stderr) => {
+          .on("error", (err) => {
             console.error(`❌ Slide ${i + 1} error:`, err.message);
-            // Fallback — render without Ken Burns
-            ffmpeg()
-              .input(audioPath)
-              .input(imagePath)
-              .inputOptions(["-loop 1"])
-              .outputOptions([
-                `-vf`, `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1${textFilter}`,
-                `-c:v libx264`,
-                `-preset ultrafast`,
-                `-crf 30`,
-                `-c:a aac`,
-                `-b:a 96k`,
-                `-pix_fmt yuv420p`,
-                `-shortest`,
-                `-y`,
-              ])
-              .output(slideVideoPath)
-              .on("end", resolve)
-              .on("error", reject)
-              .run();
+            reject(err);
           })
           .run();
       });
@@ -140,11 +100,11 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
       );
     }
 
-    // Step 3 — Merge all slides
+    // Step 3 — Merge slides
     onProgress("🔗 Merging slides...", 83);
     const concatFile = path.join(tempDir, `${jobId}_concat.txt`);
     fs.writeFileSync(concatFile,
-      slideVideos.map((v) => `file '${v.replace(/\\/g, "/")}'`).join("\n")
+      slideVideos.map(v => `file '${v.replace(/\\/g, "/")}'`).join("\n")
     );
 
     const mergedPath = path.join(tempDir, `${jobId}_merged.mp4`);
@@ -159,25 +119,22 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
         .run();
     });
 
-    // Step 4 — Add background music
-    onProgress("🎵 Adding background music...", 86);
+    // Step 4 — Add background music (optional)
+    onProgress("🎵 Adding music...", 86);
     const musicType = getMusicForNiche(niche);
     const musicPath = path.join(musicDir, MUSIC_FILES[musicType]);
-    const finalPath = path.join(tempDir, `${jobId}_final_temp.mp4`);
+    const finalPath = path.join(tempDir, `${jobId}_with_music.mp4`);
 
     if (fs.existsSync(musicPath)) {
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(mergedPath)
           .input(musicPath)
-          .complexFilter([
-            "[1:a]volume=0.12,aloop=loop=-1:size=2e+09[music]",
-            "[0:a][music]amix=inputs=2:duration=first:dropout_transition=3[aout]",
-          ])
           .outputOptions([
+            "-c:v copy",
+            "-filter_complex [1:a]volume=0.12,aloop=loop=-1:size=2e+09[music];[0:a][music]amix=inputs=2:duration=first[aout]",
             "-map 0:v",
             "-map [aout]",
-            "-c:v copy",
             "-c:a aac",
             "-b:a 128k",
             "-shortest",
@@ -199,16 +156,14 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
 
     fs.copyFileSync(finalPath, outputPath);
 
-    // Verify
     if (!fs.existsSync(outputPath)) throw new Error("Output not created");
     const fileSizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(2);
-    console.log(`✅ Final video: ${fileSizeMB}MB, ${totalDuration.toFixed(1)}s`);
+    console.log(`✅ Final: ${fileSizeMB}MB, ${totalDuration.toFixed(1)}s`);
 
     onProgress(`☁️ Uploading ${fileSizeMB}MB...`, 90);
 
     // Step 5 — Upload to Cloudinary
-    let uploadResult;
-    uploadResult = await new Promise((resolve, reject) => {
+    const uploadResult = await new Promise((resolve, reject) => {
       cloudinary.uploader.upload_large(
         outputPath,
         {
@@ -220,23 +175,15 @@ const assembleVideo = async (slides, jobId, durationType, onProgress, niche = "H
           timeout: 300000,
         },
         (error, result) => {
-          if (error) {
-            reject(new Error(error.message || JSON.stringify(error)));
-          } else {
-            console.log("✅ Uploaded:", result.secure_url);
-            resolve(result);
-          }
+          if (error) reject(new Error(error.message || JSON.stringify(error)));
+          else { console.log("✅ Uploaded:", result.secure_url); resolve(result); }
         }
       );
     });
 
     onProgress("✅ Video ready!", 100);
 
-    // Cleanup
-    cleanup(tempDir, jobId, [
-      outputPath, mergedPath, finalPath,
-      concatFile, ...slideVideos,
-    ]);
+    cleanup(tempDir, jobId, [outputPath, mergedPath, finalPath, concatFile, ...slideVideos]);
 
     return {
       cloudinary_url: uploadResult.secure_url,
@@ -261,10 +208,8 @@ const getAudioDuration = (audioPath) => {
 
 const cleanup = (tempDir, jobId, files = []) => {
   try {
-    files.forEach((f) => {
-      try { if (f && fs.existsSync(f)) fs.unlinkSync(f); } catch {}
-    });
-    fs.readdirSync(tempDir).forEach((f) => {
+    files.forEach(f => { try { if (f && fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+    fs.readdirSync(tempDir).forEach(f => {
       if (f.startsWith(jobId)) {
         try { fs.unlinkSync(path.join(tempDir, f)); } catch {}
       }
